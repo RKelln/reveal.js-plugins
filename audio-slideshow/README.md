@@ -1,5 +1,7 @@
 # Audio slideshow
 
+RK: Updated to use modules, to be used with [reveal-vite](https://github.com/bahmutov/reveal-vite).
+
 A plugin for [Reveal.js](https://github.com/hakimel/reveal.js) allowing to easily add audio playback to each slide and fragment of your presentation.
 The slideshow adds an audio player to the slideshow and plays an audio file provided for each slide and fragment.
 When an audio file has finished playing, the plugin and automatically advances the slideshow to the next slide or fragment.
