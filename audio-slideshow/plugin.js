@@ -236,8 +236,9 @@ const initAudioSlideshow = function(reveal){
 			return;
 		}
 
-		var textContainer =  document.createElement( 'div' );
-		var text = null;
+		let textContainer =  document.createElement( 'div' );
+		let text = null;
+		let fragments = null;
 		if ( !slide.hasAttribute( 'data-audio-src' ) ) {
 			// determine text for TTS
 			if ( slide.hasAttribute( 'data-audio-text' ) ) {
@@ -245,15 +246,15 @@ const initAudioSlideshow = function(reveal){
 			}
 			else if ( defaultNotes && reveal.getSlideNotes( slide ) ) {
 				// defaultNotes
-				var div = document.createElement("div");
+				let div = document.createElement("div");
 				div.innerHTML = reveal.getSlideNotes( slide );
 				text = div.textContent || '';
 			}
 			else if ( defaultText ) {
 				textContainer.innerHTML = slide.innerHTML;
 				// remove fragments
-				var fragments = textContainer.querySelectorAll( '.fragment' ) ;
-				for( var f = 0, len = fragments.length; f < len; f++ ) {
+				fragments = textContainer.querySelectorAll( '.fragment' ) ;
+				for( let f = 0, len = fragments.length; f < len; f++ ) {
 					textContainer.innerHTML = textContainer.innerHTML.replace(fragments[f].outerHTML,'');
 				}
 				text = getText( textContainer);
@@ -261,14 +262,16 @@ const initAudioSlideshow = function(reveal){
 // alert( h + '.' + v + ": " + text );
 // console.log( h + '.' + v + ": " + text );
 		}
-		setupAudioElement( container, h + '.' + v, slide.getAttribute( 'data-audio-src' ), text, slide.querySelector( ':not(.fragment) > video[data-audio-controls]' ) );
-		var i = 0;
-		var  fragments;
+		let video = slide.querySelector( ':not(.fragment) > video[data-audio-controls]' );
+		if (!video) {
+			video = slide.slideBackgroundContentElement.querySelector('video');
+		}
+		setupAudioElement( container, h + '.' + v, slide.getAttribute( 'data-audio-src' ), text, video );
+		let i = 0;
 		while ( (fragments = slide.querySelectorAll( '.fragment[data-fragment-index="' + i +'"]' )).length > 0 ) {
-			var audio = null;
-			var video = null;
-			var text = '';
-			for( var f = 0, len = fragments.length; f < len; f++ ) {
+			let audio = null;
+			let text = '';
+			for( let f = 0, len = fragments.length; f < len; f++ ) {
 				if ( !audio ) audio = fragments[ f ].getAttribute( 'data-audio-src' );
 				if ( !video ) video = fragments[ f ].querySelector( 'video[data-audio-controls]' );
 				// determine text for TTS
