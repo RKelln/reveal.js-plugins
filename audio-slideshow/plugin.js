@@ -263,6 +263,7 @@ const initAudioSlideshow = function(reveal){
 // console.log( h + '.' + v + ": " + text );
 		}
 		let video = slide.querySelector( ':not(.fragment) > video[data-audio-controls]' );
+		let link_position = true; // whether the audio position controls the video position
 		if (!video) {
 			video = slide.slideBackgroundContentElement.querySelector('video');
 		}
@@ -271,9 +272,14 @@ const initAudioSlideshow = function(reveal){
 		while ( (fragments = slide.querySelectorAll( '.fragment[data-fragment-index="' + i +'"]' )).length > 0 ) {
 			let audio = null;
 			let text = '';
+			link_position = false;
 			for( let f = 0, len = fragments.length; f < len; f++ ) {
+				audio = null;
 				if ( !audio ) audio = fragments[ f ].getAttribute( 'data-audio-src' );
-				if ( !video ) video = fragments[ f ].querySelector( 'video[data-audio-controls]' );
+				if ( !video ) {
+					video = fragments[ f ].querySelector( 'video[data-audio-controls]' );
+					link_position = true;
+				}
 				// determine text for TTS
 				if ( fragments[ f ].hasAttribute( 'data-audio-text' ) ) {
 					text += fragments[ f ].getAttribute( 'data-audio-text' ) + ' ';
@@ -284,22 +290,22 @@ const initAudioSlideshow = function(reveal){
 				}
 			}
 //console.log( h + '.' + v + '.' + i  + ": >" + text +"<")
-			setupAudioElement( container, h + '.' + v + '.' + i, audio, text, video  );
+			setupAudioElement( container, h + '.' + v + '.' + i, audio, text, video, link_position );
  			i++;
 		}
 	}
 
 	// try to sync video with audio controls
-	function linkVideoToAudioControls( audioElement, videoElement ) {
+	function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
 		audioElement.addEventListener( 'playing', function( event ) {
-			videoElement.currentTime = audioElement.currentTime;
+			if (link_position) videoElement.currentTime = audioElement.currentTime;
 		} );
 		audioElement.addEventListener( 'play', function( event ) {
-			videoElement.currentTime = audioElement.currentTime;
+			if (link_position) videoElement.currentTime = audioElement.currentTime;
 			if ( videoElement.paused ) videoElement.play();
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
-			videoElement.currentTime = audioElement.currentTime;
+			if (link_position) videoElement.currentTime = audioElement.currentTime;
 			if ( !videoElement.paused ) videoElement.pause();
 		} );
 		audioElement.addEventListener( 'volumechange', function( event ) {
@@ -307,7 +313,7 @@ const initAudioSlideshow = function(reveal){
 			videoElement.muted = audioElement.muted;
 		} );
 		audioElement.addEventListener( 'seeked', function( event ) {
-			videoElement.currentTime = audioElement.currentTime;
+			if (link_position) videoElement.currentTime = audioElement.currentTime;
 		} );
 
 		// add silent audio to video to be used as fallback
