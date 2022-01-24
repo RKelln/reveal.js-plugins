@@ -267,7 +267,11 @@ const initAudioSlideshow = function(reveal){
 		if (!video) {
 			video = slide.slideBackgroundContentElement.querySelector('video');
 		}
-		setupAudioElement( container, h + '.' + v, slide.getAttribute( 'data-audio-src' ), text, video );
+		// if there are fragments on this slide then assume no audio / video linking
+		if (slide.querySelector( '.fragment' )) {
+			link_position = false;
+		}
+		setupAudioElement( container, h + '.' + v, slide.getAttribute( 'data-audio-src' ), text, video, link_position );
 		let i = 0;
 		while ( (fragments = slide.querySelectorAll( '.fragment[data-fragment-index="' + i +'"]' )).length > 0 ) {
 			let audio = null;
@@ -345,7 +349,7 @@ const initAudioSlideshow = function(reveal){
 		}
 	}
 
-	function setupAudioElement( container, indices, audioFile, text, videoElement ) {
+	function setupAudioElement( container, indices, audioFile, text, videoElement, link_postion = true ) {
 		var audioElement = document.createElement( 'audio' );
 		audioElement.setAttribute( 'style', "position: relative; top: 20px; left: 10%; width: 80%;" );
 		audioElement.id = "audioplayer-" + indices;
@@ -356,11 +360,11 @@ const initAudioSlideshow = function(reveal){
 		if ( videoElement ) {
 			// connect play, pause, volumechange, mute, timeupdate events to video
 			if ( videoElement.duration ) {
-				linkVideoToAudioControls( audioElement, videoElement );
+				linkVideoToAudioControls( audioElement, videoElement, link_postion );
 			}
 			else {
 				videoElement.addEventListener('loadedmetadata', (event) => {
-					linkVideoToAudioControls( audioElement, videoElement );
+					linkVideoToAudioControls( audioElement, videoElement, link_postion );
 				});
 			}
 		}
