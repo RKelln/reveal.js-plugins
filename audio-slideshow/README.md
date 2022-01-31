@@ -1,6 +1,8 @@
 # Audio slideshow
 
-RK: Updated to use modules, to be used with [reveal-vite](https://github.com/bahmutov/reveal-vite).
+RK: Updated to use modules, to be used with [reveal-vite](https://github.com/bahmutov/reveal-vite). This plugin now won't work outside a very specific `vite` environment, and is not intended to be a drop-in replacement.
+
+-----
 
 A plugin for [Reveal.js](https://github.com/hakimel/reveal.js) allowing to easily add audio playback to each slide and fragment of your presentation.
 The slideshow adds an audio player to the slideshow and plays an audio file provided for each slide and fragment.
@@ -126,7 +128,7 @@ If no audio file and no text is provided for a slide or fragment, the slide adva
 The ```advance``` parameter can be used to specify a time (in milliseconds) to wait before advancing to the next slide or fragment.
 If the parameter value is set to zero, the slideshow advances with the next slide or fragment immediately after the previous audio is played.
 If the parameter value is set to a negative value, the slideshow does not advance after the audio is played.
-For each slide or fragment the ```data-audio-advance``` attribute can be set to overwrite the  parameter.
+For each slide or fragment the ```data-audio-advance``` attribute can be set to overwrite the parameter.
 
 #### Automatically start slideshow
 
@@ -160,7 +162,7 @@ For other browser and mobile devices recording may not work at all.
 
 ### Recording and fetching audio files on Chrome
 
-Your slideshow should be loaded  on HTTP or HTTPS. For slide decks stored on the local disk, you may have to launch the Chrome browser from the command line window with additional arguments for full functionality.
+Your slideshow should be loaded on HTTP or HTTPS. For slide decks stored on the local disk, you may have to launch the Chrome browser from the command line window with additional arguments for full functionality.
 
 ```
 google-chrome  --disable-web-security --allow-file-access-from-files slidedeck.html

@@ -1,5 +1,6 @@
 /*****************************************************************
-** Author: Asvin Goel, goel@telematique.eu
+** Authors: Asvin Goel, goel@telematique.eu
+**		    Ryan Kelln, ryankelln.com
 **
 ** A plugin for reveal.js allowing to  automatically play audio
 ** files for a slide deck. After an audio file has completed
@@ -8,13 +9,14 @@
 ** available, a blank audio file with default  duration is played
 ** instead.
 **
-** Version: 1.0.2
+** Version: 1.1
 **
 ** License: MIT license (see LICENSE.md)
 **
 ******************************************************************/
 
 import Recorder from './recorder.js';
+import { createSilentAudio } from 'create-silent-audio';
 
 const RevealAudioSlideshow = {
     id: 'RevealAudioSlideshow',
@@ -49,24 +51,24 @@ const initAudioSlideshow = function(reveal){
 
 	var silence;
 	var currentAudio = null;
-	var previousAudio = null;
+	//var previousAudio = null;
 	var timer = null;
 
 	reveal.addEventListener( 'fragmentshown', function( event ) {
 		if ( timer ) { clearTimeout( timer ); timer = null; }
-//console.debug( "fragmentshown ");
+		//console.debug( "fragmentshown ");
 		selectAudio();
 	} );
 
 	reveal.addEventListener( 'fragmenthidden', function( event ) {
 		if ( timer ) { clearTimeout( timer ); timer = null; }
-//console.debug( "fragmenthidden ");
+		//console.debug( "fragmenthidden ");
 		selectAudio();
 	} );
 
 	reveal.addEventListener( 'ready', function( event ) {
 		setup();
-//console.debug( "ready ");
+		//console.debug( "ready ");
 		selectAudio();
 		document.dispatchEvent( new CustomEvent('stopplayback') );
 
@@ -74,12 +76,18 @@ const initAudioSlideshow = function(reveal){
 
 	reveal.addEventListener( 'slidechanged', function( event ) {
 		if ( timer ) { clearTimeout( timer ); timer = null; }
-//console.debug( "slidechanged ");
-		var indices = reveal.getIndices();
+		//console.debug( "slidechanged ", event);
+
+		// hide fragments when slide is shown if needed
+		let indices = reveal.getIndices();
 		if ( !startAtFragment && typeof indices.f !== 'undefined' && indices.f >= 0) {
-			// hide fragments when slide is shown
 			reveal.slide(indices.h, indices.v, -1);
 		}
+
+		// update background videos
+		let video = event.currentSlide.slideBackgroundContentElement.querySelector('video');
+		let audio = getAudioPlayer(indices);
+		linkVideoToAudioControls(audio, video);
 
 		selectAudio();
 	} );
@@ -111,30 +119,40 @@ const initAudioSlideshow = function(reveal){
 		}
 	} );
 
+	function getAudioPlayer(indices = null) {
+		if (indices == null) {
+			indices = reveal.getIndices();
+		}
+		let id = "audioplayer-" + indices.h + '.' + indices.v;
+		if ( indices.f != undefined && indices.f >= 0 ) id = id + '.' + indices.f;
+		return document.getElementById( id );
+	}
+
+	// returns true if selected audio startsplaying
 	function selectAudio( previousAudio ) {
+		//console.debug("selectAudio", previousAudio, currentAudio);
 		if ( currentAudio ) {
 			currentAudio.pause();
 			currentAudio.style.display = "none";
 		}
-		var indices = reveal.getIndices();
-		var id = "audioplayer-" + indices.h + '.' + indices.v;
-		if ( indices.f != undefined && indices.f >= 0 ) id = id + '.' + indices.f;
-		currentAudio = document.getElementById( id );
+		currentAudio = getAudioPlayer();
 		if ( currentAudio ) {
 			currentAudio.style.display = "block";
 			if ( previousAudio ) {
 				if ( currentAudio.id != previousAudio.id ) {
 					currentAudio.volume = previousAudio.volume;
 					currentAudio.muted = previousAudio.muted;
-//console.debug( "Play " + currentAudio.id);
+					//console.debug( "Play " + currentAudio.id);
 					currentAudio.play();
 				}
 			}
 			else if ( autoplay ) {
 				currentAudio.play();
 			}
-
+			return true;
 		}
+		//console.warn("No currentAudio")
+		return false;
 	}
 
 
@@ -180,7 +198,9 @@ const initAudioSlideshow = function(reveal){
 		}
 		document.getElementsByTagName( 'head' )[0].appendChild( style );
 
-		silence = new SilentAudio( defaultDuration ); // create the wave file
+		if ( defaultDuration > 0) {
+			silence = createSilentAudio( defaultDuration ); // create the wave file
+		}
 
 		var divElement =  document.createElement( 'div' );
 		divElement.className = "audio-controls";
@@ -188,7 +208,7 @@ const initAudioSlideshow = function(reveal){
 		document.querySelector( ".reveal" ).appendChild( divElement );
 
 		// preload all video elements that meta data becomes available as early as possible
-		preloadVideoELements();
+		preloadVideoElements();
 
 		// create audio players for all slides
 		var horizontalSlides = document.querySelectorAll( '.reveal .slides>section' );
@@ -205,7 +225,7 @@ const initAudioSlideshow = function(reveal){
 		}
 	}
 
-	function preloadVideoELements() {
+	function preloadVideoElements() {
 		var videoElements = document.querySelectorAll( 'video[data-audio-controls]' );
 		for( var i = 0; i < videoElements.length; i++ ) {
 //console.warn(videoElements[i]);
@@ -266,6 +286,7 @@ const initAudioSlideshow = function(reveal){
 		let link_position = true; // whether the audio position controls the video position
 		if (!video) {
 			video = slide.slideBackgroundContentElement.querySelector('video');
+			//console.debug("found background vid:", video, container, h, v, slide );
 		}
 		// if there are fragments on this slide then assume no audio / video linking
 		if (slide.querySelector( '.fragment' )) {
@@ -300,7 +321,38 @@ const initAudioSlideshow = function(reveal){
 	}
 
 	// try to sync video with audio controls
+	// HACK: This is a hot mess, sorry. A proper solution would add a custom event in
+	// revealjs when background video elements are finished preloading and added to 
+	// DOM. For now this function can be called for both videos and background videos
+	// in multiple times and palces and so tries to handle the different cases
+	// as best it can. Which isn't very well.
+	// Second, the source loading is a mess, since what we really want is to preload
+	// the real audio every time not any fallback silence. It may be fast enough to
+	// create silence only as needed and never add silent sources, but that is untested.
+	// Currently the silent audio source elements are pretty extraneous, but I've left
+	// them in for now.
 	function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
+		if (!audioElement || !videoElement) return;
+
+		if (!videoElement.duration) {
+			console.warn("Suspicious video duration:", videoElement, videoElement.duration);
+			return;
+		}
+
+		let linked_video_src = audioElement.querySelector('source[data-linked-video]');
+		
+		if (linked_video_src && linked_video_src == videoElement.currentSrc) {
+			console.warn("already linked", audioElement.currentSrc, linked_video_src, videoElement.currentSrc);
+			return;
+		}
+		//console.debug("linkVideoToAudioControls", audioElement, audioElement.currentSrc, videoElement.currentSrc);
+		
+		// set video link
+		let audioSource = audioElement.querySelector('source');
+		if (audioSource) {
+			audioSource.setAttribute("data-linked-video", videoElement.currentSrc);
+		}
+
 		audioElement.addEventListener( 'playing', function( event ) {
 			if (link_position) videoElement.currentTime = audioElement.currentTime;
 		} );
@@ -320,14 +372,40 @@ const initAudioSlideshow = function(reveal){
 			if (link_position) videoElement.currentTime = audioElement.currentTime;
 		} );
 
-		// add silent audio to video to be used as fallback
-		var audioSource = audioElement.querySelector('source[data-audio-silent]');
-		if ( audioSource ) audioElement.removeChild( audioSource );
+		let target_duration = Math.round(videoElement.duration + .5);
+
+		// if there is real audio, or silent audio matches video length, 
+		// then we're OK but ensure the audio src is actually then one we want
+		if (audioSource) {
+			if (!audioSource.dataset.audioSilent || 
+				audioSource.dataset.audioSilent == target_duration) {
+				//console.debug("audio exists", audioSource, audioSource.src, videoElement.currentSrc);
+				if (audioElement.currentSrc != audioSource.src) {
+					//console.debug("hard link src");
+					audioElement.src = audioSource.src;
+				}
+				return;
+			}
+		}
+		//console.debug("link silent to video", audioElement, videoElement.currentSrc, videoElement.duration);
+		
+		// remove existing silent audio if it doesnt match duration
+		audioSource = audioElement.querySelector('source[data-audio-silent]');
+		if ( audioSource && audioSource.duration != target_duration) {
+			//console.debug("remove old silent with bad duration", audioSource, audioSource.duration, target_duration );
+			audioElement.removeChild( audioSource );
+		}
+
+		// add silent audio with video length, to be used as fallback if no audio
 		audioSource = document.createElement( 'source' );
-		var videoSilence = new SilentAudio( Math.round(videoElement.duration + .5) ); // create the wave file
-		audioSource.src= videoSilence.dataURI;
-		audioSource.setAttribute("data-audio-silent", videoElement.duration);
+		if (!videoElement.duration || videoElement.duration > 600) {
+			console.warn("Suspicious video duration for silent audio:", videoElement.duration);
+		}
+		audioSource.src = createSilentAudio( target_duration );
+		audioSource.setAttribute("data-audio-silent", target_duration);
+		audioSource.setAttribute("data-linked-video", videoElement.currentSrc);
 		audioElement.appendChild(audioSource, audioElement.firstChild);
+		audioElement.src = audioSource.src;
 	}
 
 	function setupFallbackAudio( audioElement, text, videoElement ) {
@@ -341,10 +419,12 @@ const initAudioSlideshow = function(reveal){
 		else {
 	 		if ( !audioElement.querySelector('source[data-audio-silent]') ) {
 				// create silent source if not yet existent
-				var audioSource = document.createElement( 'source' );
-				audioSource.src = silence.dataURI;
-				audioSource.setAttribute("data-audio-silent", defaultDuration);
-				audioElement.appendChild(audioSource, audioElement.firstChild);
+				if (silence != null) {
+					let audioSource = document.createElement( 'source' );
+					audioSource.src = silence;
+					audioSource.setAttribute("data-audio-silent", defaultDuration);
+					audioElement.appendChild(audioSource, audioElement.firstChild);
+				}
 			}
 		}
 	}
@@ -357,26 +437,32 @@ const initAudioSlideshow = function(reveal){
 		audioElement.setAttribute( 'controls', '' );
 		audioElement.setAttribute( 'preload', 'none' );
 
+		//console.debug("setupAudioElement", audioFile, videoElement);
+
 		if ( videoElement ) {
 			// connect play, pause, volumechange, mute, timeupdate events to video
 			if ( videoElement.duration ) {
 				linkVideoToAudioControls( audioElement, videoElement, link_postion );
 			}
 			else {
+				//console.log("wait for meta from", videoElement);
 				videoElement.addEventListener('loadedmetadata', (event) => {
+					//console.log("GOT meta from", videoElement, event);
 					linkVideoToAudioControls( audioElement, videoElement, link_postion );
 				});
 			}
 		}
+
 		audioElement.addEventListener( 'ended', function( event ) {
+			//console.debug("ended", audioElement);
 			if ( reveal.isRecording == 'undefined' || !reveal.isRecording ) {
 				// determine whether and when slideshow advances with next slide
-				var advanceNow = advance;
-				var slide = reveal.getCurrentSlide();
+				let advanceNow = advance;
+				let slide = reveal.getCurrentSlide();
 				// check current fragment
-				var indices = reveal.getIndices();
+				let indices = reveal.getIndices();
 				if ( typeof indices.f !== 'undefined' && indices.f >= 0) {
-					var fragment = slide.querySelector( '.fragment[data-fragment-index="' + indices.f + '"][data-audio-advance]' ) ;
+					let fragment = slide.querySelector( '.fragment[data-fragment-index="' + indices.f + '"][data-audio-advance]' ) ;
 					if ( fragment ) {
 						advanceNow = fragment.getAttribute( 'data-audio-advance' );
 					}
@@ -386,15 +472,15 @@ const initAudioSlideshow = function(reveal){
 				}
 				// advance immediately or set a timer - or do nothing
 				if ( advance == "true" || advanceNow == 0 ) {
-					var previousAudio = currentAudio;
+					let prev = currentAudio;
 					reveal.next();
-					selectAudio( previousAudio );
+					selectAudio( prev );
 				}
 				else if ( advanceNow > 0 ) {
 					timer = setTimeout( function() {
-						var previousAudio = currentAudio;
+						let prev = currentAudio;
 						reveal.next();
-						selectAudio( previousAudio );
+						selectAudio( prev );
 						timer = null;
 					}, advanceNow );
 				}
@@ -426,6 +512,9 @@ const initAudioSlideshow = function(reveal){
 			}
 			if ( nextAudio ) {
 //console.debug( "Preload: " + nextAudio.id );
+
+				// FIXME: set up audio for videos here so loading works better
+
 				nextAudio.load();
 			}
 		} );
@@ -474,45 +563,12 @@ const initAudioSlideshow = function(reveal){
 				audioElement.insertBefore(audioSource, audioElement.firstChild);
 				setupFallbackAudio( audioElement, text, videoElement );
 			}
+		} else if (!videoElement) {
+			//console.log(" extra fallback for ", audioElement, videoElement);
+			setupFallbackAudio( audioElement, text, videoElement );
 		}
 		if ( audioFile != null || defaultDuration > 0 ) {
 			container.appendChild( audioElement );
 		}
 	}
-};
-
-/*****************************************************************
-** Create SilentAudio
-** based on: RIFFWAVE.js v0.03
-** http://www.codebase.es/riffwave/riffwave.js
-**
-** Usage:
-** silence = new SilentAudio( 10 ); // create 10 seconds wave file
-**
-******************************************************************/
-
-var FastBase64={
-	chars:"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
-	encLookup:[],
-	Init:function(){for(var e=0;4096>e;e++)this.encLookup[e]=this.chars[e>>6]+this.chars[63&e]},
-	Encode:function(e){for(var h=e.length,a="",t=0;h>2;){
-		const n=e[t]<<16|e[t+1]<<8|e[t+2];
-		a+=this.encLookup[n>>12]+this.encLookup[4095&n];
-		h-=3;
-		t+=3;
-	}
-	if(h>0){var s=(252&e[t])>>2,i=(3&e[t])<<4;if(h>1&&(i|=(240&e[++t])>>4),a+=this.chars[s],a+=this.chars[i],2==h){var r=(15&e[t++])<<2;r|=(192&e[t])>>6,a+=this.chars[r]}1==h&&(a+="="),a+="="}return a}
-};
-FastBase64.Init();
-var SilentAudio=function(e){
-	function h(e){return[255&e,e>>8&255,e>>16&255,e>>24&255]}
-	function a(e){return[255&e,e>>8&255]}
-	function t(e){for(var h=[],a=0,t=e.length,s=0;t>s;s++)h[a++]=255&e[s],h[a++]=e[s]>>8&255;return h}
-	this.data=[],
-	this.wav=[],
-	this.dataURI="",
-	this.header={chunkId:[82,73,70,70],chunkSize:0,format:[87,65,86,69],subChunk1Id:[102,109,116,32],subChunk1Size:16,audioFormat:1,numChannels:1,sampleRate:8e3,byteRate:0,blockAlign:0,bitsPerSample:8,subChunk2Id:[100,97,116,97],subChunk2Size:0},
-	this.Make=function(e){for(var s=0;s<e*this.header.sampleRate;s++)this.data[s]=127;this.header.blockAlign=this.header.numChannels*this.header.bitsPerSample>>3,this.header.byteRate=this.header.blockAlign*this.sampleRate,this.header.subChunk2Size=this.data.length*(this.header.bitsPerSample>>3),this.header.chunkSize=36+this.header.subChunk2Size,this.wav=this.header.chunkId.concat(h(this.header.chunkSize),this.header.format,this.header.subChunk1Id,h(this.header.subChunk1Size),a(this.header.audioFormat),a(this.header.numChannels),h(this.header.sampleRate),h(this.header.byteRate),a(this.header.blockAlign),a(this.header.bitsPerSample),this.header.subChunk2Id,h(this.header.subChunk2Size),16==this.header.bitsPerSample?t(this.data):this.data),
-	this.dataURI="data:audio/wav;base64,"+FastBase64.Encode(this.wav)},
-	this.Make(e)
 };
