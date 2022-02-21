@@ -406,6 +406,7 @@ const initAudioSlideshow = function(reveal){
 		audioSource.setAttribute("data-linked-video", videoElement.currentSrc);
 		audioElement.appendChild(audioSource, audioElement.firstChild);
 		audioElement.src = audioSource.src;
+		audioElement.loop = videoElement.loop; // loop silence if video loops
 	}
 
 	function setupFallbackAudio( audioElement, text, videoElement ) {
@@ -464,11 +465,14 @@ const initAudioSlideshow = function(reveal){
 				if ( typeof indices.f !== 'undefined' && indices.f >= 0) {
 					let fragment = slide.querySelector( '.fragment[data-fragment-index="' + indices.f + '"][data-audio-advance]' ) ;
 					if ( fragment ) {
-						advanceNow = fragment.getAttribute( 'data-audio-advance' );
+						advanceNow = + fragment.getAttribute( 'data-audio-advance' );
 					}
 				}
 				else if ( slide.hasAttribute( 'data-audio-advance' ) ) {
-					advanceNow = slide.getAttribute( 'data-audio-advance' );
+					advanceNow = + slide.getAttribute( 'data-audio-advance' ); // + does int conversion
+					if (!Number.isInteger(advanceNow)) {
+						console.warn("data-audio-advance invalid", slide.getAttribute( 'data-audio-advance' ), slide);
+					}
 				}
 				// advance immediately or set a timer - or do nothing
 				if ( advance == "true" || advanceNow == 0 ) {
