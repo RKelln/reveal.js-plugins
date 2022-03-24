@@ -70,7 +70,7 @@ const initAudioSlideshow = function(reveal){
 		setup();
 		//console.debug( "ready ");
 		selectAudio();
-		document.dispatchEvent( new CustomEvent('stopplayback') );
+		//document.dispatchEvent( new CustomEvent('stopplayback') );
 
 	} );
 
@@ -130,9 +130,12 @@ const initAudioSlideshow = function(reveal){
 
 	// returns true if selected audio startsplaying
 	function selectAudio( previousAudio ) {
-		//console.debug("selectAudio", previousAudio, currentAudio);
+		//console.log("selectAudio", previousAudio, currentAudio);
 		if ( currentAudio ) {
-			currentAudio.pause();
+			if (!currentAudio.ended) {
+				currentAudio.pause();
+			}
+			currentAudio.currentTime = 0; // reset to start
 			currentAudio.style.display = "none";
 		}
 		currentAudio = getAudioPlayer();
@@ -324,7 +327,7 @@ const initAudioSlideshow = function(reveal){
 	// HACK: This is a hot mess, sorry. A proper solution would add a custom event in
 	// revealjs when background video elements are finished preloading and added to 
 	// DOM. For now this function can be called for both videos and background videos
-	// in multiple times and palces and so tries to handle the different cases
+	// in multiple times and places and thus tries to handle the different cases
 	// as best it can. Which isn't very well.
 	// Second, the source loading is a mess, since what we really want is to preload
 	// the real audio every time not any fallback silence. It may be fast enough to
@@ -340,8 +343,8 @@ const initAudioSlideshow = function(reveal){
 		}
 
 		let linked_video_src = audioElement.querySelector('source[data-linked-video]');
-		
-		if (linked_video_src && linked_video_src == videoElement.currentSrc) {
+		//console.log("linked_video_src", linked_video_src, videoElement.currentSrc);
+		if (linked_video_src && linked_video_src.dataset.linkedVideo == videoElement.currentSrc) {
 			console.warn("already linked", audioElement.currentSrc, linked_video_src, videoElement.currentSrc);
 			return;
 		}
@@ -357,12 +360,17 @@ const initAudioSlideshow = function(reveal){
 			if (link_position) videoElement.currentTime = audioElement.currentTime;
 		} );
 		audioElement.addEventListener( 'play', function( event ) {
-			if (link_position) videoElement.currentTime = audioElement.currentTime;
-			if ( videoElement.paused ) videoElement.play();
+			if ( videoElement.paused ) {
+				// below is done in playing event:
+				//if (link_position) videoElement.currentTime = audioElement.currentTime;
+				videoElement.play();
+			}
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
-			if (link_position) videoElement.currentTime = audioElement.currentTime;
-			if ( !videoElement.paused ) videoElement.pause();
+			if ( !videoElement.paused ) { 
+				if (link_position) videoElement.currentTime = audioElement.currentTime;
+				videoElement.pause();
+			}
 		} );
 		audioElement.addEventListener( 'volumechange', function( event ) {
 			videoElement.volume = audioElement.volume;
@@ -403,7 +411,6 @@ const initAudioSlideshow = function(reveal){
 		}
 		audioSource.src = createSilentAudio( target_duration );
 		audioSource.setAttribute("data-audio-silent", target_duration);
-		audioSource.setAttribute("data-linked-video", videoElement.currentSrc);
 		audioElement.appendChild(audioSource, audioElement.firstChild);
 		audioElement.src = audioSource.src;
 		audioElement.loop = videoElement.loop; // loop silence if video loops
@@ -478,13 +485,13 @@ const initAudioSlideshow = function(reveal){
 				if ( advance == "true" || advanceNow == 0 ) {
 					let prev = currentAudio;
 					reveal.next();
-					selectAudio( prev );
+					//selectAudio( prev );
 				}
 				else if ( advanceNow > 0 ) {
 					timer = setTimeout( function() {
 						let prev = currentAudio;
 						reveal.next();
-						selectAudio( prev );
+						//selectAudio( prev );
 						timer = null;
 					}, advanceNow );
 				}
@@ -493,6 +500,9 @@ const initAudioSlideshow = function(reveal){
 		audioElement.addEventListener( 'play', function( event ) {
 			var evt = new CustomEvent('startplayback');
 			evt.timestamp = 1000 * audioElement.currentTime;
+			if (audioElement.currentTime > 0 && !audioElement.ended) {
+				evt.paused = false;
+			}
 			document.dispatchEvent( evt );
 
 			if ( timer ) { clearTimeout( timer ); timer = null; }
@@ -524,10 +534,15 @@ const initAudioSlideshow = function(reveal){
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
 			if ( timer ) { clearTimeout( timer ); timer = null; }
-			document.dispatchEvent( new CustomEvent('stopplayback') );
+			let evt = new CustomEvent('stopplayback');
+			// if we are not at start or end then send pause signal
+			if (audioElement.currentTime > 0 && !audioElement.ended) {
+				evt.paused = true;
+			}
+			document.dispatchEvent( evt );
 		} );
 		audioElement.addEventListener( 'seeked', function( event ) {
-			var evt = new CustomEvent('seekplayback');
+			let evt = new CustomEvent('seekplayback');
 			evt.timestamp = 1000 * audioElement.currentTime;
 			document.dispatchEvent( evt );
 			if ( timer ) { clearTimeout( timer ); timer = null; }
