@@ -51,8 +51,9 @@ const initAudioSlideshow = function(reveal){
 
 	var silence;
 	var currentAudio = null;
-	//var previousAudio = null;
+	var previousAudio = null;
 	var timer = null;
+	var initialized = false;
 
 	reveal.addEventListener( 'fragmentshown', function( event ) {
 		if ( timer ) { clearTimeout( timer ); timer = null; }
@@ -68,28 +69,32 @@ const initAudioSlideshow = function(reveal){
 
 	reveal.addEventListener( 'ready', function( event ) {
 		setup();
-		//console.debug( "ready ");
-		selectAudio();
+		//console.debug( "AudioSlideshow ready");
+		handleNewSlide(event.currentSlide);
 		//document.dispatchEvent( new CustomEvent('stopplayback') );
 
 	} );
 
-	reveal.addEventListener( 'slidechanged', function( event ) {
+	function handleNewSlide(slide) {
+		if (!initialized) return;
 		if ( timer ) { clearTimeout( timer ); timer = null; }
-		//console.debug( "slidechanged ", event);
+		//console.debug( "AudioSlideshow handleNewSlide ", slide);
 
 		// hide fragments when slide is shown if needed
-		let indices = reveal.getIndices();
+		const indices = reveal.getIndices();
 		if ( !startAtFragment && typeof indices.f !== 'undefined' && indices.f >= 0) {
 			reveal.slide(indices.h, indices.v, -1);
 		}
 
 		// update background videos
-		let video = event.currentSlide.slideBackgroundContentElement.querySelector('video');
-		let audio = getAudioPlayer(indices);
-		linkVideoToAudioControls(audio, video);
+		let video = slide.slideBackgroundContentElement.querySelector('video');
+		linkVideoToAudioControls(getAudioPlayer(indices), video);
 
-		selectAudio();
+		selectAudio(); // important that this comes after updating background videos
+	}
+
+	reveal.addEventListener( 'slidechanged', function( event ) {
+		handleNewSlide(event.currentSlide);
 	} );
 
 	reveal.addEventListener( 'paused', function( event ) {
@@ -128,38 +133,40 @@ const initAudioSlideshow = function(reveal){
 		return document.getElementById( id );
 	}
 
-	// returns true if selected audio startsplaying
-	function selectAudio( previousAudio ) {
-		//console.log("selectAudio", previousAudio, currentAudio);
+	// returns currentAudio or null
+	function selectAudio() {
+		//console.debug("AudioSlideshow selectAudio", previousAudio, currentAudio);
 		if ( currentAudio ) {
-			if (!currentAudio.ended) {
-				currentAudio.pause();
+			previousAudio = currentAudio;
+			if (!previousAudio.ended) {
+				//console.log("selectAudio pause on end", previousAudio.id);
+				previousAudio.pause();
+				if ( timer ) { clearTimeout( timer ); timer = null; }
 			}
-			currentAudio.currentTime = 0; // reset to start
-			currentAudio.style.display = "none";
+			previousAudio.currentTime = 0; // reset to start
+			previousAudio.style.display = "none";
 		}
 		currentAudio = getAudioPlayer();
 		if ( currentAudio ) {
 			currentAudio.style.display = "block";
-			if ( previousAudio ) {
-				if ( currentAudio.id != previousAudio.id ) {
-					currentAudio.volume = previousAudio.volume;
-					currentAudio.muted = previousAudio.muted;
-					//console.debug( "Play " + currentAudio.id);
-					currentAudio.play();
-				}
+			if ( previousAudio && currentAudio.id != previousAudio.id) {
+				currentAudio.volume = previousAudio.volume;
+				currentAudio.muted = previousAudio.muted;
 			}
-			else if ( autoplay ) {
+			if ( autoplay ) {
+				//console.debug( "Play " + currentAudio.id, currentAudio);
 				currentAudio.play();
 			}
-			return true;
+			return currentAudio;
 		}
-		//console.warn("No currentAudio")
-		return false;
+		console.warn("No currentAudio")
+		return null;
 	}
 
 
 	function setup() {
+		if (initialized) return;
+
 		// wait for markdown and highlight plugin to be done
 		if (
 			document.querySelector( 'section[data-markdown]:not([data-markdown-parsed])' ) 
@@ -168,6 +175,8 @@ const initAudioSlideshow = function(reveal){
 			setTimeout( setup, 100 );
 			return;
 		}
+
+		initialized = true;
 
 		// set parameters
 		var config = reveal.getConfig().audio;
@@ -334,7 +343,7 @@ const initAudioSlideshow = function(reveal){
 	// create silence only as needed and never add silent sources, but that is untested.
 	// Currently the silent audio source elements are pretty extraneous, but I've left
 	// them in for now.
-	function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
+	async function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
 		if (!audioElement || !videoElement) return;
 
 		if (!videoElement.duration) {
@@ -354,15 +363,17 @@ const initAudioSlideshow = function(reveal){
 		let audioSource = audioElement.querySelector('source');
 		if (audioSource) {
 			audioSource.setAttribute("data-linked-video", videoElement.currentSrc);
+
+			// ensure non-silent audio doesn't loop (if it was set to silent previously)
+			if (!audioSource.dataset.audioSilent) {
+				audioElement.loop = false;
+			}
 		}
 
 		audioElement.addEventListener( 'playing', function( event ) {
+			//console.debug("AudioSlideshow playing event", audioElement.id);
 			if (link_position) videoElement.currentTime = audioElement.currentTime;
-		} );
-		audioElement.addEventListener( 'play', function( event ) {
 			if ( videoElement.paused ) {
-				// below is done in playing event:
-				//if (link_position) videoElement.currentTime = audioElement.currentTime;
 				videoElement.play();
 			}
 		} );
@@ -411,9 +422,17 @@ const initAudioSlideshow = function(reveal){
 		}
 		audioSource.src = createSilentAudio( target_duration );
 		audioSource.setAttribute("data-audio-silent", target_duration);
-		audioElement.appendChild(audioSource, audioElement.firstChild);
-		audioElement.src = audioSource.src;
 		audioElement.loop = videoElement.loop; // loop silence if video loops
+		try {
+			audioElement.appendChild(audioSource, audioElement.firstChild);
+			audioElement.src = audioSource.src;
+			await audioElement.load();
+		} catch (err) {
+			// can be interrupted
+			//console.debug("src/load interrupted", err);
+			audioElement.src = null;
+			audioElement.removeChild(audioSource);
+		}
 	}
 
 	function setupFallbackAudio( audioElement, text, videoElement ) {
@@ -485,12 +504,14 @@ const initAudioSlideshow = function(reveal){
 				if ( advance == "true" || advanceNow == 0 ) {
 					let prev = currentAudio;
 					reveal.next();
+					//console.debug("advance immediate select audio", prev);
 					//selectAudio( prev );
 				}
 				else if ( advanceNow > 0 ) {
 					timer = setTimeout( function() {
 						let prev = currentAudio;
 						reveal.next();
+						//console.debug('advance in', advanceNow,'select audio', prev);
 						//selectAudio( prev );
 						timer = null;
 					}, advanceNow );
@@ -498,11 +519,13 @@ const initAudioSlideshow = function(reveal){
 			}
 		} );
 		audioElement.addEventListener( 'play', function( event ) {
-			var evt = new CustomEvent('startplayback');
+			var evt = new CustomEvent('startplayback', {
+				detail: {
+					resume: audioElement.currentTime > 0 && !audioElement.ended,
+					id: audioElement.id
+				}
+			});
 			evt.timestamp = 1000 * audioElement.currentTime;
-			if (audioElement.currentTime > 0 && !audioElement.ended) {
-				evt.paused = false;
-			}
 			document.dispatchEvent( evt );
 
 			if ( timer ) { clearTimeout( timer ); timer = null; }
@@ -525,20 +548,20 @@ const initAudioSlideshow = function(reveal){
 				}
 			}
 			if ( nextAudio ) {
-//console.debug( "Preload: " + nextAudio.id );
-
+				//console.debug( "Preload: " + nextAudio.id );
 				// FIXME: set up audio for videos here so loading works better
-
 				nextAudio.load();
 			}
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
 			if ( timer ) { clearTimeout( timer ); timer = null; }
-			let evt = new CustomEvent('stopplayback');
-			// if we are not at start or end then send pause signal
-			if (audioElement.currentTime > 0 && !audioElement.ended) {
-				evt.paused = true;
-			}
+			let evt = new CustomEvent('stopplayback', {
+				detail: {
+					// if we are not at start or end then send pause signal
+					pause: audioElement.currentTime > 0 && !audioElement.ended,
+					id: audioElement.id
+				}
+			});
 			document.dispatchEvent( evt );
 		} );
 		audioElement.addEventListener( 'seeked', function( event ) {
