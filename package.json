@@ -1,21 +1,21 @@
 {
   "name": "reveal.js-plugins",
-  "version": "4.1.5",
+  "version": "5.0.0",
   "description": "A plugin collection for your reveal.js presentations",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rajgoel/reveal.js-plugins.git"
+    "url": "https://github.com/RKelln/reveal.js-plugins"
   },
   "keywords": [
     "reveal",
     "plugins"
   ],
-  "author": "Asvin Goel",
+  "author": "Asvin Goel & Ryan Kelln",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/rajgoel/reveal.js-plugins/issues"
   },
-  "homepage": "https://github.com/rajgoel/reveal.js-plugins/blob/master/README.md",
+  "homepage": "https://github.com/RKelln/reveal.js-plugins",
   "dependencies": {
     "create-silent-audio": "^0.1.1",
     "npm": "^6.13.4"
