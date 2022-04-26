@@ -54,10 +54,16 @@ const initAudioSlideshow = function(reveal){
 	var previousAudio = null;
 	var timer = null;
 	var initialized = false;
+	var audioIdPrefix = 'audioplayer-';
 
 	reveal.addEventListener( 'fragmentshown', function( event ) {
 		if ( timer ) { clearTimeout( timer ); timer = null; }
 		//console.debug( "fragmentshown ");
+
+		// update background videos
+		let video = reveal.getCurrentSlide().slideBackgroundContentElement.querySelector('video');
+		linkVideoToAudioControls(getAudioPlayer(), video, false);
+
 		selectAudio();
 	} );
 
@@ -88,7 +94,23 @@ const initAudioSlideshow = function(reveal){
 
 		// update background videos
 		let video = slide.slideBackgroundContentElement.querySelector('video');
-		linkVideoToAudioControls(getAudioPlayer(indices), video);
+		// HACK: If there are fragments then do not link audio and video.
+		//       See setupAllAudioElements()
+		let link_position = true;
+		if (slide.querySelector( '.fragment' )) {
+			link_position = false;
+		}
+		// HACK: video should be linked already but variou failures may have 
+		// caused it not to be, so we re-link here but expect it to abort
+		linkVideoToAudioControls(getAudioPlayer(indices), video, link_position);
+		// FIXME: if audio and video are unlinked then we need to start the video
+		// unlinked video is typically on slides with (audio) fragments.
+		// In addition wealways want to start the video from the beginning.
+		// Having the video being controlled by the audio this way isn't ideal.
+		if (video) {
+			video.currentTime = 0;
+			if (!link_position) { video.play(); }
+		}
 
 		selectAudio(); // important that this comes after updating background videos
 	}
@@ -125,12 +147,44 @@ const initAudioSlideshow = function(reveal){
 	} );
 
 	function getAudioPlayer(indices = null) {
+		return document.getElementById( getAudioPlayerId(indices) );
+	}
+
+	function getAudioPlayerId(indices = null) {
 		if (indices == null) {
 			indices = reveal.getIndices();
 		}
-		let id = "audioplayer-" + indices.h + '.' + indices.v;
-		if ( indices.f != undefined && indices.f >= 0 ) id = id + '.' + indices.f;
-		return document.getElementById( id );
+		let id = audioIdPrefix + indices.h + '.' + indices.v;
+		if ( indices.f != undefined && indices.f >= 0 ) {
+			id = id + '.' + indices.f;
+		}
+		return id;
+	}
+
+	function getNextAudioPlayer(indices = null) {
+		if (indices == null) {
+			indices = reveal.getIndices();
+		}
+		let nextId = audioIdPrefix + indices.h + '.' + indices.v;
+		if ( indices.f != undefined && indices.f >= 0 ) {
+			// next fragment
+			nextId = nextId + '.' + (indices.f + 1);
+		}
+		else { // try to get this slide's first fragment
+			nextId = nextId + '.0';
+		}
+		var nextAudio = document.getElementById( nextId );
+		if ( !nextAudio ) {
+			// next verical slide
+			nextId = audioIdPrefix + indices.h + '.' + (indices.v+1);
+			nextAudio = document.getElementById( nextId );
+			if ( !nextAudio ) {
+				// next horizontal slide
+				nextId = audioIdPrefix+ (indices.h+1) + '.0';
+				nextAudio = document.getElementById( nextId );
+			}
+		}
+		return nextAudio;
 	}
 
 	// returns currentAudio or null
@@ -139,7 +193,7 @@ const initAudioSlideshow = function(reveal){
 		if ( currentAudio ) {
 			previousAudio = currentAudio;
 			if (!previousAudio.ended) {
-				//console.log("selectAudio pause on end", previousAudio.id);
+				//console.debug("selectAudio pause on end", previousAudio.id);
 				previousAudio.pause();
 				if ( timer ) { clearTimeout( timer ); timer = null; }
 			}
@@ -240,7 +294,7 @@ const initAudioSlideshow = function(reveal){
 	function preloadVideoElements() {
 		var videoElements = document.querySelectorAll( 'video[data-audio-controls]' );
 		for( var i = 0; i < videoElements.length; i++ ) {
-//console.warn(videoElements[i]);
+			//console.warn(videoElements[i]);
 			videoElements[i].load();
 		}
 	}
@@ -291,8 +345,8 @@ const initAudioSlideshow = function(reveal){
 				}
 				text = getText( textContainer);
 			}
-// alert( h + '.' + v + ": " + text );
-// console.log( h + '.' + v + ": " + text );
+		// alert( h + '.' + v + ": " + text );
+		// console.log( h + '.' + v + ": " + text );
 		}
 		let video = slide.querySelector( ':not(.fragment) > video[data-audio-controls]' );
 		let link_position = true; // whether the audio position controls the video position
@@ -326,9 +380,18 @@ const initAudioSlideshow = function(reveal){
 					text += getText( textContainer );
 				}
 			}
-//console.log( h + '.' + v + '.' + i  + ": >" + text +"<")
+			//console.log( h + '.' + v + '.' + i  + ": >" + text +"<")
 			setupAudioElement( container, h + '.' + v + '.' + i, audio, text, video, link_position );
  			i++;
+		}
+	}
+
+	// sets video position to audio position with a small leeway (in seconds)
+	function linkPosition(audioElement, videoElement, leeway = 0.1) {
+		if (!audioElement || !videoElement || !audioElement.duration || !videoElement.duration) return;
+		if (Math.abs(videoElement.currentTime - audioElement.currentTime) > leeway) {
+			//console.debug("linkPosition", audioElement.currentTime, videoElement.currentTime, audioElement.id, videoElement.currentSrc);
+			videoElement.currentTime = audioElement.currentTime;
 		}
 	}
 
@@ -346,18 +409,20 @@ const initAudioSlideshow = function(reveal){
 	async function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
 		if (!audioElement || !videoElement) return;
 
+		
 		if (!videoElement.duration) {
 			console.warn("Suspicious video duration:", videoElement, videoElement.duration);
 			return;
 		}
-
+		
 		let linked_video_src = audioElement.querySelector('source[data-linked-video]');
 		//console.log("linked_video_src", linked_video_src, videoElement.currentSrc);
 		if (linked_video_src && linked_video_src.dataset.linkedVideo == videoElement.currentSrc) {
 			console.warn("already linked", audioElement.currentSrc, linked_video_src, videoElement.currentSrc);
 			return;
 		}
-		//console.debug("linkVideoToAudioControls", audioElement, audioElement.currentSrc, videoElement.currentSrc);
+		
+		//console.debug("linkVideoToAudioControls", link_position, audioElement.id, linked_video_src, videoElement.currentSrc);
 		
 		// set video link
 		let audioSource = audioElement.querySelector('source');
@@ -371,15 +436,27 @@ const initAudioSlideshow = function(reveal){
 		}
 
 		audioElement.addEventListener( 'playing', function( event ) {
-			//console.debug("AudioSlideshow playing event", audioElement.id);
-			if (link_position) videoElement.currentTime = audioElement.currentTime;
+			//console.debug("AudioSlideshow playing event", link_position, event.currentTarget.id, videoElement.currentSrc);
 			if ( videoElement.paused ) {
-				videoElement.play();
+				videoElement.play().then(() => {
+					if (link_position) linkPosition(audioElement, videoElement);
+				});
+			}
+		} );
+		audioElement.addEventListener( 'play', function( event ) {
+			//console.debug("AudioSlideshow PLAY event", link_position, audioElement.id, videoElement.currentSrc);
+			
+			// HACK: sometimes only play event is fired, rather than "play" and "playing"
+			// so we also include link position and play handling here, but really should
+			// only be in "playing" event
+			if ( videoElement.paused ) {
+				videoElement.play().then(() => {
+					if (link_position) linkPosition(audioElement, videoElement);
+				});
 			}
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
 			if ( !videoElement.paused ) { 
-				if (link_position) videoElement.currentTime = audioElement.currentTime;
 				videoElement.pause();
 			}
 		} );
@@ -388,7 +465,7 @@ const initAudioSlideshow = function(reveal){
 			videoElement.muted = audioElement.muted;
 		} );
 		audioElement.addEventListener( 'seeked', function( event ) {
-			if (link_position) videoElement.currentTime = audioElement.currentTime;
+			if (link_position) linkPosition(audioElement, videoElement, 0);
 		} );
 
 		let target_duration = Math.round(videoElement.duration + .5);
@@ -429,7 +506,7 @@ const initAudioSlideshow = function(reveal){
 			await audioElement.load();
 		} catch (err) {
 			// can be interrupted
-			//console.debug("src/load interrupted", err);
+			console.warn("src/load interrupted", err);
 			audioElement.src = null;
 			audioElement.removeChild(audioSource);
 		}
@@ -469,12 +546,13 @@ const initAudioSlideshow = function(reveal){
 		if ( videoElement ) {
 			// connect play, pause, volumechange, mute, timeupdate events to video
 			if ( videoElement.duration ) {
+				//console.debug("video loaded", videoElement);
 				linkVideoToAudioControls( audioElement, videoElement, link_postion );
 			}
 			else {
-				//console.log("wait for meta from", videoElement);
+				//console.debug("wait for meta from", videoElement);
 				videoElement.addEventListener('loadedmetadata', (event) => {
-					//console.log("GOT meta from", videoElement, event);
+					//console.debug("GOT meta from", videoElement, event);
 					linkVideoToAudioControls( audioElement, videoElement, link_postion );
 				});
 			}
@@ -519,6 +597,7 @@ const initAudioSlideshow = function(reveal){
 			}
 		} );
 		audioElement.addEventListener( 'play', function( event ) {
+			//console.debug("play event", audioElement.id);
 			var evt = new CustomEvent('startplayback', {
 				detail: {
 					resume: audioElement.currentTime > 0 && !audioElement.ended,
@@ -530,27 +609,14 @@ const initAudioSlideshow = function(reveal){
 
 			if ( timer ) { clearTimeout( timer ); timer = null; }
 			// preload next audio element so that it is available after slide change
-			var indices = reveal.getIndices();
-			var nextId = "audioplayer-" + indices.h + '.' + indices.v;
-			if ( indices.f != undefined && indices.f >= 0 ) {
-				nextId = nextId + '.' + (indices.f + 1);
-			}
-			else {
-				nextId = nextId + '.0';
-			}
-			var nextAudio = document.getElementById( nextId );
-			if ( !nextAudio ) {
-				nextId = "audioplayer-" + indices.h + '.' + (indices.v+1);
-				nextAudio = document.getElementById( nextId );
-				if ( !nextAudio ) {
-					nextId = "audioplayer-" + (indices.h+1) + '.0';
-					nextAudio = document.getElementById( nextId );
-				}
-			}
+			const nextAudio = getNextAudioPlayer();
 			if ( nextAudio ) {
-				//console.debug( "Preload: " + nextAudio.id );
 				// FIXME: set up audio for videos here so loading works better
-				nextAudio.load();
+				//console.debug( "Preload: ", nextAudio.id, nextAudio.readyState);
+				// if we don't have any data then load
+				if (nextAudio.readyState < 2) {
+					nextAudio.load();
+				}
 			}
 		} );
 		audioElement.addEventListener( 'pause', function( event ) {
@@ -598,7 +664,7 @@ const initAudioSlideshow = function(reveal){
 				}
 				xhr.send(null);
 			} catch( error ) {
-//console.log("Error checking audio" + audioExists);
+				console.warn("Error checking audio" + audioExists);
 				// fallback if checking of audio file fails (e.g. when running the slideshow locally)
 				var audioSource = document.createElement( 'source' );
 				audioSource.src = prefix + indices + suffix;
@@ -606,7 +672,7 @@ const initAudioSlideshow = function(reveal){
 				setupFallbackAudio( audioElement, text, videoElement );
 			}
 		} else if (!videoElement) {
-			//console.log(" extra fallback for ", audioElement, videoElement);
+			//console.debug(" extra fallback for ", audioElement, videoElement);
 			setupFallbackAudio( audioElement, text, videoElement );
 		}
 		if ( audioFile != null || defaultDuration > 0 ) {
