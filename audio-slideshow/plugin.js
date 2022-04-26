@@ -409,9 +409,16 @@ const initAudioSlideshow = function(reveal){
 	async function linkVideoToAudioControls( audioElement, videoElement, link_position = true ) {
 		if (!audioElement || !videoElement) return;
 
-		
-		if (!videoElement.duration) {
-			console.warn("Suspicious video duration:", videoElement, videoElement.duration);
+		if (videoElement.readyState == 0 || !videoElement.duration) {
+			//console.warn("Video not loaded:", videoElement, videoElement.duration);
+			videoElement.addEventListener('loadedmetadata', (event) => {
+				linkVideoToAudioControls( audioElement, videoElement, link_postion )
+				.then( (result) => {
+					// likely missed it's chance to start playing, try to compensate
+					videoElement.play();
+				});
+			});
+			videoElement.load();
 			return;
 		}
 		
