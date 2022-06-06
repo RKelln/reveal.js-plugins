@@ -40,7 +40,7 @@ const initAudioSlideshow = function(reveal){
 //	var textToSpeechURL = "http://api.voicerss.org/?key=[YOUR_KEY]&hl=en-gb&c=ogg&src="; // the text to speech converter
 	var defaultNotes = false; // use slide notes as default for the text to speech converter
 	var defaultText = false; // use slide text as default for the text to speech converter
-	var defaultDuration = 5; // value in seconds
+	var defaultDuration = 5; // value in seconds: 0 = no advance if no audio
 	var defaultAudios = true; // try to obtain audio for slide and fragment numbers
 	var advance = 0; // advance to next slide after given time in milliseconds after audio has played, use negative value to not advance
 	var autoplay = false; // automatically start slideshow
@@ -541,6 +541,9 @@ const initAudioSlideshow = function(reveal){
 	}
 
 	function setupAudioElement( container, indices, audioFile, text, videoElement, link_postion = true ) {
+		// if no audio or default audio then abort
+		if (audioFile == null && !defaultAudios && defaultDuration <= 0) return;
+		
 		var audioElement = document.createElement( 'audio' );
 		audioElement.setAttribute( 'style', "position: relative; top: 20px; left: 10%; width: 80%;" );
 		audioElement.id = "audioplayer-" + indices;
